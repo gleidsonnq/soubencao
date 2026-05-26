@@ -61,6 +61,71 @@ export default function CheckoutPage({ params }: { params: Promise<{ loja: strin
     }
   }, [items, router, lojaSlug]);
 
+  // 1. Busca os dados da loja atual com base na URL para garantir a independência
+  useEffect(() => {
+    async function carregarDadosLoja() {
+      const { data } = await supabase
+        .from('lojas')
+        .select('id, nome, slug')
+        .eq('slug', lojaSlug)
+        .single();
+      
+      if (data) {
+        setLojaAtual(data);
+      } else {
+        router.push('/'); // Se a loja não existir na URL, manda de volta ao portal
+      }
+    }
+    carregarDadosLoja();
+  }, [lojaSlug, supabase, router]);
+
+  // 2. Redireciona se o carrinho estiver vazio
+  useEffect(() => {
+    if (items.length === 0) {
+      router.push(`/${lojaSlug}`);
+    }
+  }, [items, router, lojaSlug]);
+
+  // 3. NOVO: Consulta automática do cliente pelo WhatsApp
+  useEffect(() => {
+    const whatsappLimpo = whatsapp.replace(/\D/g, '');
+    
+    // Dispara a consulta apenas quando o número atingir o tamanho padrão (10 ou 11 dígitos)
+    if (whatsappLimpo.length === 10 || whatsappLimpo.length === 11) {
+      async function buscarClienteExistente() {
+        const { data: cliente, error } = await supabase
+          .from('clientes')
+          .select('nome, endereco')
+          .eq('whatsapp', whatsappLimpo)
+          .maybeSingle();
+
+        if (error) {
+          console.error('Erro ao consultar cliente:', error.message);
+          return;
+        }
+
+        if (cliente) {
+          if (cliente.nome) setNome(cliente.nome);
+          
+          if (cliente.endereco && cliente.endereco !== 'Retirada na Loja') {
+            const partes = cliente.endereco.split(' - ');
+            if (partes.length > 1) {
+              const cidadeSalva = partes.pop(); 
+              const enderecoSalvo = partes.join(' - '); 
+              
+              setEndereco(enderecoSalvo);
+              if (cidadeSalva) setCidade(cidadeSalva);
+            } else {
+              setEndereco(cliente.endereco);
+            }
+          }
+        }
+      }
+      buscarClienteExistente();
+    }
+  }, [whatsapp, supabase]);
+
+
   // Lógica de cálculo de valores dinâmicos
   const subtotal = items.reduce((acc, item) => acc + (item.preco * item.quantidade), 0);
   
