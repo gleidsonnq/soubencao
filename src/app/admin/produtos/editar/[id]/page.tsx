@@ -24,6 +24,7 @@ export default function EditarProdutoPage({ params }: { params: Promise<{ id: st
 
   // Estados do Produto
   const [nome, setNome] = useState('');
+  const [descricao, setDescricao] = useState('');
   const [preco, setPreco] = useState('');
   const [sku, setSku] = useState('');
   const [ativo, setAtivo] = useState(true);
@@ -58,6 +59,7 @@ export default function EditarProdutoPage({ params }: { params: Promise<{ id: st
       }
 
       setNome(produto.nome);
+      setDescricao(produto.descricao || '');
       setPreco(produto.preco.toString());
       setSku(produto.codigo_referencia || '');
       setAtivo(produto.ativo);
@@ -162,6 +164,7 @@ export default function EditarProdutoPage({ params }: { params: Promise<{ id: st
         .from('produtos')
         .update({
           nome,
+          descricao,
           preco: parseFloat(preco),
           codigo_referencia: sku,
           categoria_id: categoriaId,
@@ -195,7 +198,7 @@ export default function EditarProdutoPage({ params }: { params: Promise<{ id: st
 
         <form onSubmit={handleSalvar} className="space-y-6">
           
-          <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">Nome do Produto</label>
               <input type="text" required value={nome} onChange={(e) => setNome(e.target.value)} className="w-full border p-3 rounded-xl text-gray-800"/>
@@ -208,6 +211,18 @@ export default function EditarProdutoPage({ params }: { params: Promise<{ id: st
                 ))}
               </select>
             </div>
+          </div>
+
+          {/* BLOCO 2: DESCRIÇÃO (Fora do grid, ocupa a largura total) */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">Descrição do Produto</label>
+            <textarea 
+              rows={4}
+              value={descricao} 
+              onChange={(e) => setDescricao(e.target.value)} 
+              className="w-full border p-3 rounded-xl text-gray-800 resize-none outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Descreva os detalhes do produto..."
+            />
           </div>
 
           <div className="grid grid-cols-3 gap-4">

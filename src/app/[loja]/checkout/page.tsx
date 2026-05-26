@@ -133,7 +133,9 @@ export default function CheckoutPage({ params }: { params: Promise<{ loja: strin
 
       const whatsappUrl = `https://wa.me/${numeroLoja}?text=${encodeURIComponent(textoMsg)}`;
       clearCart();
-      window.location.href = whatsappUrl;
+      
+      window.open(whatsappUrl, '_blank');
+      router.push(`/${lojaSlug}`);
 
     } catch (error) {
       console.error(error);

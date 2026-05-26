@@ -38,6 +38,7 @@ export default function NovoProdutoPage() {
 
   // Estados do formulário de produto
   const [nome, setNome] = useState('');
+  const [descricao, setDescricao] = useState('');
   const [preco, setPreco] = useState('');
   const [sku, setSku] = useState('');
   const [status, setStatus] = useState('');
@@ -210,7 +211,8 @@ export default function NovoProdutoPage() {
       const { error } = await supabase
         .from('produtos')
         .insert([{ 
-          nome, 
+          nome,
+          descricao, 
           preco: parseFloat(preco), 
           codigo_referencia: sku, 
           minio_path: caminhosSalvos[0], // Primeira foto como capa
@@ -227,6 +229,7 @@ export default function NovoProdutoPage() {
         setStatus('Produto cadastrado com sucesso! 🎉');
         // Limpa os campos após o sucesso
         setNome(''); 
+        setDescricao('');
         setPreco(''); 
         setSku(''); 
         setImagensProcessadas([]);
@@ -302,7 +305,16 @@ export default function NovoProdutoPage() {
             <label className="block text-sm font-semibold text-gray-700 mb-1">Nome do Produto</label>
             <input type="text" required value={nome} onChange={(e) => setNome(e.target.value)} className="w-full border p-3 rounded-xl text-gray-800"/>
           </div>
-          
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">Descrição do Produto</label>
+            <textarea 
+              rows={4}
+              value={descricao} 
+              onChange={(e) => setDescricao(e.target.value)} 
+              className="w-full border p-3 rounded-xl text-gray-800 resize-none outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Descreva os detalhes, material, medidas..."
+            />
+          </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">Preço (R$)</label>
