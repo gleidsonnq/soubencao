@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware'; // <-- IMPORTANTE: Importa o middleware de persistência
+import { persist } from 'zustand/middleware';
 
 export interface CartItem {
   id: number;
@@ -7,6 +7,7 @@ export interface CartItem {
   preco: number;
   minio_path: string;
   quantidade: number;
+  estoque: number;
 }
 
 interface CartStore {
@@ -28,16 +29,32 @@ export const useCartStore = create<CartStore>()(
       
       addItem: (newItem) => set((state) => {
         const existingItem = state.items.find(item => item.id === newItem.id);
+        
+        // PROTEÇÃO: se o estoque vier undefined, assume 99 como limite seguro
+        const limiteEstoque = newItem.estoque ?? 99; 
+        
         if (existingItem) {
+          const novaQuantidade = Math.min(existingItem.quantidade + 1, limiteEstoque);
+          
+          if (novaQuantidade === existingItem.quantidade) {
+            alert('Você atingiu o estoque máximo disponível para este produto!');
+          }
+
           return {
             items: state.items.map(item =>
-              item.id === newItem.id ? { ...item, quantidade: item.quantidade + 1 } : item
+              item.id === newItem.id ? { ...item, quantidade: novaQuantidade } : item
             ),
             isOpen: true
           };
         }
+        
+        if (limiteEstoque <= 0) {
+          alert('Este produto está esgotado!');
+          return { items: state.items, isOpen: state.isOpen };
+        }
+
         return { 
-          items: [...state.items, { ...newItem, ...{ quantidade: 1 } }],
+          items: [...state.items, { ...newItem, quantidade: 1 }],
           isOpen: true
         };
       }),
@@ -46,19 +63,42 @@ export const useCartStore = create<CartStore>()(
         items: state.items.filter(item => item.id !== id)
       })),
 
-      updateQuantity: (id, quantidade) => set((state) => ({
-        items: state.items.map(item =>
-          item.id === id ? { ...item, quantidade: Math.max(1, quantidade) } : item
-        )
-      })),
+      updateQuantity: (id, quantidade) => set((state) => {
+        let mostrarAlerta = false;
+
+        const novosItems = state.items.map(item => {
+          if (item.id === id) {
+            // Se o item for "antigo" no cache, usa 99. Se for novo, usa o estoque real.
+            const limiteEstoque = item.estoque ?? 99; 
+            
+            // Se tentou clicar no '+' passando do limite:
+            if (quantidade > limiteEstoque) {
+              mostrarAlerta = true;
+              return { ...item, quantidade: limiteEstoque };
+            }
+            
+            // Se não passou do limite, atualiza normal (garantindo que não seja menor que 1)
+            const novaQuantidade = Math.max(1, quantidade);
+            return { ...item, quantidade: novaQuantidade };
+          }
+          return item;
+        });
+
+        // Exibe o alerta na tela se tentou ultrapassar
+        if (mostrarAlerta) {
+          setTimeout(() => alert('Quantidade máxima disponível em estoque atingida!'), 10);
+        }
+
+        return { items: novosItems };
+      }),
 
       clearCart: () => set({ items: [] }),
       openCart: () => set({ isOpen: true }),
       closeCart: () => set({ isOpen: false }),
     }),
     {
-      name: 'bencao-store-cart', // Nome único da chave que será criada no LocalStorage do navegador
-      partialize: (state) => ({ items: state.items }), // Salva APENAS os itens, ignorando o estado "isOpen"
+      name: 'bencao-store-cart',
+      partialize: (state) => ({ items: state.items }),
     }
   )
 );

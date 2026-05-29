@@ -13,6 +13,10 @@ interface Produto {
   categorias: {
     nome: string;
   } | null;
+  // 1. ADICIONAMOS A SUBCATEGORIA NA INTERFACE
+  subcategorias: {
+    nome: string;
+  } | null;
 }
 
 export default function GerenciarProdutosPage() {
@@ -29,7 +33,8 @@ export default function GerenciarProdutosPage() {
     const carregarDadosIniciais = async () => {
       const { data, error } = await supabase
         .from('produtos')
-        .select('*, categorias(nome)')
+        // 2. PEDIMOS PARA TRAZER A SUBCATEGORIA NO SELECT
+        .select('*, categorias(nome), subcategorias(nome)')
         .order('id', { ascending: false });
 
       if (!error && data) {
@@ -60,10 +65,10 @@ export default function GerenciarProdutosPage() {
       return;
     }
 
-    // Busca a lista atualizada logo após apagar
+    // Busca a lista atualizada logo após apagar (COM A SUBCATEGORIA TAMBÉM)
     const { data: dadosAtualizados, error: erroBusca } = await supabase
       .from('produtos')
-      .select('*, categorias(nome)')
+      .select('*, categorias(nome), subcategorias(nome)')
       .order('id', { ascending: false });
 
     if (!erroBusca && dadosAtualizados) {
@@ -85,7 +90,8 @@ export default function GerenciarProdutosPage() {
             <tr className="bg-gray-50 border-b border-gray-200 text-sm">
               <th className="p-4 font-semibold text-gray-600">SKU</th>
               <th className="p-4 font-semibold text-gray-600">Nome do Produto</th>
-              <th className="p-4 font-semibold text-gray-600">Categoria</th>
+              {/* ATUALIZAMOS O TÍTULO DA COLUNA */}
+              <th className="p-4 font-semibold text-gray-600">Categoria / Sub</th>
               <th className="p-4 font-semibold text-gray-600">Preço</th>
               <th className="p-4 font-semibold text-gray-600">Status</th>
               <th className="p-4 font-semibold text-gray-600 text-center">Ações</th>
@@ -96,7 +102,17 @@ export default function GerenciarProdutosPage() {
               <tr key={produto.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
                 <td className="p-4 text-gray-500 font-mono text-sm">{produto.codigo_referencia || '-'}</td>
                 <td className="p-4 font-bold text-gray-800">{produto.nome}</td>
-                <td className="p-4 text-gray-600">{produto.categorias?.nome || 'Geral'}</td>
+                
+                {/* 3. EXIBIMOS A CATEGORIA E A SUBCATEGORIA SE ELA EXISTIR */}
+                <td className="p-4 text-gray-600 text-sm">
+                  <span className="font-semibold">{produto.categorias?.nome || 'Geral'}</span>
+                  {produto.subcategorias?.nome && (
+                    <span className="text-gray-400 ml-1">
+                      &gt; {produto.subcategorias.nome}
+                    </span>
+                  )}
+                </td>
+
                 <td className="p-4 text-gray-800 font-medium">R$ {produto.preco?.toFixed(2)}</td>
                 <td className="p-4">
                   <span className={`px-2 py-1 text-xs rounded-md font-bold ${produto.ativo ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>

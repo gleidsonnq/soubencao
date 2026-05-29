@@ -11,6 +11,12 @@ interface Categoria {
   nome: string;
 }
 
+// 1. ADICIONADO: Molde da Subcategoria
+interface Subcategoria {
+  id: number;
+  nome: string;
+}
+
 export default function EditarProdutoPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
   
@@ -31,10 +37,15 @@ export default function EditarProdutoPage({ params }: { params: Promise<{ id: st
   const [categoriaId, setCategoriaId] = useState<number | null>(null);
   const [lojaSlug, setLojaSlug] = useState('loja');
   const [categoriaSlug, setCategoriaSlug] = useState('geral');
+  const [codigoBarras, setCodigoBarras] = useState('');
+  
+  // 2. ADICIONADO: Estados da Subcategoria
+  const [subcategoriaId, setSubcategoriaId] = useState<number | null>(null);
+  const [subcategorias, setSubcategorias] = useState<Subcategoria[]>([]);
   
   // Estados da Galeria de Imagens
-  const [galeriaAtual, setGaleriaAtual] = useState<string[]>([]); // Fotos que já estão no banco
-  const [imagensNovas, setImagensNovas] = useState<File[]>([]);   // Fotos novas que o usuário quer adicionar
+  const [galeriaAtual, setGaleriaAtual] = useState<string[]>([]); 
+  const [imagensNovas, setImagensNovas] = useState<File[]>([]);   
   
   // Estados de Controle
   const [categorias, setCategorias] = useState<Categoria[]>([]);
@@ -64,6 +75,10 @@ export default function EditarProdutoPage({ params }: { params: Promise<{ id: st
       setSku(produto.codigo_referencia || '');
       setAtivo(produto.ativo);
       setCategoriaId(produto.categoria_id);
+      setCodigoBarras(produto.codigo_barras || '');
+      
+      // CARREGA A SUBCATEGORIA QUE JÁ ESTAVA SALVA NO BANCO
+      setSubcategoriaId(produto.subcategoria_id || null);
       
       if (produto.lojas?.slug) setLojaSlug(produto.lojas.slug);
       if (produto.categorias?.slug) setCategoriaSlug(produto.categorias.slug);
@@ -72,7 +87,6 @@ export default function EditarProdutoPage({ params }: { params: Promise<{ id: st
       if (produto.galeria && Array.isArray(produto.galeria)) {
         setGaleriaAtual(produto.galeria);
       } else if (produto.minio_path) {
-        // Fallback caso o produto seja antigo e só tenha a foto principal
         setGaleriaAtual([produto.minio_path]);
       }
 
@@ -88,6 +102,24 @@ export default function EditarProdutoPage({ params }: { params: Promise<{ id: st
     carregarDados();
   }, [produtoId, supabase]);
 
+  // 3. ADICIONADO: Busca as subcategorias sempre que a categoria mudar
+  useEffect(() => {
+    async function carregarSubcategorias() {
+      if (!categoriaId) {
+        setSubcategorias([]);
+        return;
+      }
+      const { data } = await supabase
+        .from('subcategorias')
+        .select('id, nome')
+        .eq('categoria_id', categoriaId)
+        .order('nome');
+
+      if (data) setSubcategorias(data);
+    }
+    carregarSubcategorias();
+  }, [categoriaId, supabase]);
+
   // 2. Adicionar novas fotos à fila
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -99,7 +131,6 @@ export default function EditarProdutoPage({ params }: { params: Promise<{ id: st
           filesArray.map(file => resizeAndConvertToPNG(file))
         );
         
-        // Adiciona as novas fotos mantendo as que já estavam na fila
         setImagensNovas(prev => [...prev, ...filesProntos]);
         setStatus('');
       } catch (err) {
@@ -126,7 +157,6 @@ export default function EditarProdutoPage({ params }: { params: Promise<{ id: st
     try {
       let caminhosNovos: string[] = [];
 
-      // Se houver fotos novas, faz o upload para o MinIO
       if (imagensNovas.length > 0) {
         setStatus(`Enviando ${imagensNovas.length} nova(s) imagem(ns) para o servidor...`);
         
@@ -150,7 +180,6 @@ export default function EditarProdutoPage({ params }: { params: Promise<{ id: st
         );
       }
 
-      // Junta as fotos que restaram no banco com as novas fotos enviadas
       const galeriaFinal = [...galeriaAtual, ...caminhosNovos];
 
       if (galeriaFinal.length === 0) {
@@ -159,7 +188,7 @@ export default function EditarProdutoPage({ params }: { params: Promise<{ id: st
 
       setStatus('Atualizando banco de dados...');
 
-      // Atualiza o produto
+      // 4. ADICIONADO: Envia a subcategoria para o banco (nulo se estiver vazia)
       const { error } = await supabase
         .from('produtos')
         .update({
@@ -168,22 +197,24 @@ export default function EditarProdutoPage({ params }: { params: Promise<{ id: st
           preco: parseFloat(preco),
           codigo_referencia: sku,
           categoria_id: categoriaId,
+          subcategoria_id: subcategoriaId ? subcategoriaId : null,
+          codigo_barras: codigoBarras || null,
           ativo,
-          minio_path: galeriaFinal.length > 0 ? galeriaFinal[0] : null, // Primeira foto fica como capa
+          minio_path: galeriaFinal.length > 0 ? galeriaFinal[0] : null, 
           galeria: galeriaFinal
         })
-        .eq('id', produtoId);
+        .eq('id', Number(produtoId));
 
       if (error) throw error;
 
       alert('Produto atualizado com sucesso!');
       router.push('/admin/produtos/gerenciar');
 
-    } catch (error) {
+      } catch (error) {
         if (error instanceof Error) {
-          setStatus(`Erro ao salvar: ${error.message}`);
+            setStatus(`Erro ao salvar: ${error.message}`);
         } else {
-          setStatus('Erro desconhecido ao salvar.');
+            setStatus('Erro desconhecido ao salvar.');
         }
         setSalvando(false);
       }
@@ -198,22 +229,58 @@ export default function EditarProdutoPage({ params }: { params: Promise<{ id: st
 
         <form onSubmit={handleSalvar} className="space-y-6">
           
-        <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Nome do Produto</label>
-              <input type="text" required value={nome} onChange={(e) => setNome(e.target.value)} className="w-full border p-3 rounded-xl text-gray-800"/>
-            </div>
+          {/* Nome ocupando 100% da largura para não ficar espremido com as categorias */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">Nome do Produto</label>
+            <input type="text" required value={nome} onChange={(e) => setNome(e.target.value)} className="w-full border p-3 rounded-xl text-gray-800"/>
+          </div>
+
+          {/* Categoria e Subcategoria lado a lado */}
+          <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">Categoria</label>
-              <select required value={categoriaId || ''} onChange={(e) => setCategoriaId(Number(e.target.value))} className="w-full border p-3 rounded-xl text-gray-800">
+              <select 
+                required 
+                value={categoriaId || ''} 
+                onChange={(e) => {
+                  setCategoriaId(Number(e.target.value));
+                  setSubcategoriaId(null); // Limpa a subcategoria se mudar a categoria
+                }} 
+                className="w-full border p-3 rounded-xl text-gray-800"
+              >
                 {categorias.map(cat => (
                   <option key={cat.id} value={cat.id}>{cat.nome}</option>
                 ))}
               </select>
             </div>
+            
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Subcategoria (Opcional)</label>
+              <select 
+                value={subcategoriaId || ''} 
+                onChange={(e) => setSubcategoriaId(e.target.value ? Number(e.target.value) : null)} 
+                className="w-full border p-3 rounded-xl text-gray-800 disabled:bg-gray-100"
+                disabled={subcategorias.length === 0}
+              >
+                <option value="">Sem subcategoria</option>
+                {subcategorias.map(sub => (
+                  <option key={sub.id} value={sub.id}>{sub.nome}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
-          {/* BLOCO 2: DESCRIÇÃO (Fora do grid, ocupa a largura total) */}
+          <div>
+            <label className="block text-sm font-bold text-gray-700">Código de Barras</label>
+            <input 
+              value={codigoBarras} 
+              onChange={(e) => setCodigoBarras(e.target.value)} 
+              className="w-full border p-3 rounded-xl"
+              placeholder="Opcional"
+            />
+          </div>
+
+          {/* BLOCO 2: DESCRIÇÃO */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1">Descrição do Produto</label>
             <textarea 

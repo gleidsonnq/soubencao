@@ -9,10 +9,11 @@ interface ProductCardProps {
   nome: string;
   preco: number;
   minioPath: string;
+  estoque: number;
   priority?: boolean;
 }
 
-export function ProductCard({ id, nome, preco, minioPath, priority = false }: ProductCardProps) {
+export function ProductCard({ id, nome, preco, minioPath,estoque, priority = false }: ProductCardProps) {
   const addItem = useCartStore((state) => state.addItem);
   const imageUrl = `https://s3.infra-queirozauto.cloud/${minioPath}`;
 
@@ -48,7 +49,7 @@ export function ProductCard({ id, nome, preco, minioPath, priority = false }: Pr
           R$ {preco.toFixed(2).replace('.', ',')}
         </p>
         <button 
-          onClick={() => addItem({ id, nome, preco, minio_path: minioPath })}
+          onClick={() => addItem({ id, nome, preco, minio_path: minioPath, estoque })}
           className="mt-3 w-full bg-blue-600 text-white py-2.5 rounded-lg hover:bg-blue-700 transition-colors font-medium active:scale-95"
         >
           Adicionar ao Carrinho

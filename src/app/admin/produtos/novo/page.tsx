@@ -30,6 +30,12 @@ interface Categoria {
   slug: string;
 }
 
+interface Subcategoria {
+  id: number;
+  nome: string;
+  slug?: string;
+}
+
 export default function NovoProdutoPage() {
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -42,6 +48,7 @@ export default function NovoProdutoPage() {
   const [preco, setPreco] = useState('');
   const [sku, setSku] = useState('');
   const [status, setStatus] = useState('');
+  const [codigoBarras, setCodigoBarras] = useState('');
   
   // ESTADO ATUALIZADO: Agora guarda um Array de imagens
   const [imagensProcessadas, setImagensProcessadas] = useState<File[]>([]);
@@ -52,12 +59,19 @@ export default function NovoProdutoPage() {
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [lojasDisponiveis, setLojasDisponiveis] = useState<Loja[]>([]);
   const [categoriasDisponiveis, setCategoriasDisponiveis] = useState<Categoria[]>([]);
+  const [subcategoriasDisponiveis, setSubcategoriasDisponiveis] = useState<Subcategoria[]>([]);
+  const [subcategoriaId, setSubcategoriaId] = useState<number | null>(null);
   const [carregandoPerfil, setCarregandoPerfil] = useState(true);
 
   // Estados para o Modal de Nova Categoria
   const [mostrarModalCategoria, setMostrarModalCategoria] = useState(false);
   const [novaCategoriaNome, setNovaCategoriaNome] = useState('');
   const [statusCategoria, setStatusCategoria] = useState('');
+
+  // Estados para o Modal de Nova Subcategoria
+  const [mostrarModalSubcategoria, setMostrarModalSubcategoria] = useState(false);
+  const [novaSubcategoriaNome, setNovaSubcategoriaNome] = useState('');
+  const [statusSubcategoria, setStatusSubcategoria] = useState('');
 
   // 1. Carrega o perfil do administrador logado
   useEffect(() => {
@@ -113,6 +127,33 @@ export default function NovoProdutoPage() {
     carregarCategorias();
   }, [lojaId, supabase]);
 
+  // Sempre que a Categoria mudar, busca as Subcategorias dela
+  useEffect(() => {
+    async function carregarSubcategorias() {
+      if (!categoriaId) {
+        setSubcategoriasDisponiveis([]);
+        setSubcategoriaId(null);
+        return;
+      }
+
+      const { data } = await supabase
+        .from('subcategorias')
+        .select('id, nome')
+        .eq('categoria_id', categoriaId)
+        .order('nome');
+
+      if (data) {
+        setSubcategoriasDisponiveis(data);
+        if (data.length > 0) {
+          setSubcategoriaId(data[0].id);
+        } else {
+          setSubcategoriaId(null);
+        }
+      }
+    }
+    carregarSubcategorias();
+  }, [categoriaId, supabase]);
+
   // FUNÇÃO ATUALIZADA: Processa múltiplas imagens em paralelo
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -166,7 +207,37 @@ export default function NovoProdutoPage() {
       setMostrarModalCategoria(false);
     }
   };
+  // Função para salvar a Subcategoria (COLE ABAIXO DO handleCriarCategoria)
+  const handleCriarSubcategoria = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!novaSubcategoriaNome.trim() || !categoriaId) return;
 
+    setStatusSubcategoria('Criando...');
+    const slugSub = gerarSlug(novaSubcategoriaNome);
+
+    const { data, error } = await supabase
+      .from('subcategorias')
+      .insert([{ 
+        categoria_id: categoriaId, 
+        nome: novaSubcategoriaNome.trim(), 
+        slug: slugSub 
+      }])
+      .select()
+      .single();
+
+    if (error) {
+      setStatusSubcategoria(`Erro: ${error.message}`);
+    } else if (data) {
+      const novaSub = { id: data.id, nome: data.nome, slug: data.slug };
+      setSubcategoriasDisponiveis(prev => [...prev, novaSub].sort((a,b) => a.nome.localeCompare(b.nome)));
+      setSubcategoriaId(data.id);
+      
+      setNovaSubcategoriaNome('');
+      setStatusSubcategoria('');
+      setMostrarModalSubcategoria(false);
+    }
+  };
+  // FUNÇÃO ATUALIZADA: Envia para o MinIO e depois salva no banco
   // FUNÇÃO ATUALIZADA: Envia para o MinIO e depois salva no banco
   const handleSalvarProduto = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -184,7 +255,7 @@ export default function NovoProdutoPage() {
     const pastaCategoria = categoriaAtual ? categoriaAtual.slug : 'geral';
 
     try {
-      // 1. Upload em paralelo de todas as fotos para o MinIO
+      // 1. Upload em paralelo
       const caminhosSalvos = await Promise.all(
         imagensProcessadas.map(async (img, index) => {
           const minioPathFinal = `${pastaLoja}/${pastaCategoria}/${Date.now()}-${index}-${img.name}`; 
@@ -199,15 +270,13 @@ export default function NovoProdutoPage() {
           });
 
           if (!response.ok) throw new Error('Falha no upload de uma das imagens para o MinIO.');
-
-          // O front-end já sabe o caminho, então basta retorná-lo direto!
           return minioPathFinal;
         })
       );
 
       setStatus('Imagens salvas! Registrando produto no banco de dados...');
 
-      // 2. Grava no banco usando os caminhos retornados
+      // 2. Grava no banco de dados (Garantindo que a subcategoria vai como null se estiver vazia)
       const { error } = await supabase
         .from('produtos')
         .insert([{ 
@@ -215,10 +284,13 @@ export default function NovoProdutoPage() {
           descricao, 
           preco: parseFloat(preco), 
           codigo_referencia: sku, 
-          minio_path: caminhosSalvos[0], // Primeira foto como capa
-          galeria: caminhosSalvos,       // Array completo na coluna galeria
+          codigo_barras: codigoBarras || null,
+          minio_path: caminhosSalvos[0], 
+          galeria: caminhosSalvos,      
           loja_id: lojaId,
-          categoria_id: categoriaId, 
+          categoria_id: categoriaId,
+          // PROTEÇÃO AQUI: Se for zero ou string vazia, vira null
+          subcategoria_id: subcategoriaId ? subcategoriaId : null, 
           estoque: 10,
           ativo: true
         }]);
@@ -227,12 +299,12 @@ export default function NovoProdutoPage() {
         setStatus(`Erro ao salvar no banco: ${error.message}`);
       } else {
         setStatus('Produto cadastrado com sucesso! 🎉');
-        // Limpa os campos após o sucesso
         setNome(''); 
         setDescricao('');
         setPreco(''); 
         setSku(''); 
         setImagensProcessadas([]);
+        // Não limpa loja/categoria para facilitar o cadastro do próximo produto!
       }
 
     } catch (error) {
@@ -301,6 +373,40 @@ export default function NovoProdutoPage() {
             </div>
           </div>
 
+          {/* CAIXA DE SELEÇÃO DE SUBCATEGORIAS + BOTÃO ADICIONAR */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">Subcategoria (Opcional)</label>
+            <div className="flex gap-2">
+            <select
+                value={subcategoriaId || ''}
+                onChange={(e) => setSubcategoriaId(e.target.value ? Number(e.target.value) : null)} // <-- AJUSTE AQUI
+                className="flex-grow border p-3 rounded-xl bg-white text-gray-800 focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-gray-100"
+                disabled={subcategoriasDisponiveis.length === 0 || !categoriaId}
+              >
+                {subcategoriasDisponiveis.length === 0 ? (
+                  <option value="">Nenhuma subcategoria cadastrada</option>
+                ) : (
+                  <>
+                    <option value="">Selecione uma subcategoria...</option>
+                    {subcategoriasDisponiveis.map(sub => (
+                      <option key={sub.id} value={sub.id}>{sub.nome}</option>
+                    ))}
+                  </>
+                )}
+              </select>
+              
+              <button
+                type="button"
+                onClick={() => setMostrarModalSubcategoria(true)}
+                disabled={!categoriaId}
+                className="bg-green-50 hover:bg-green-100 text-green-600 px-4 rounded-xl font-bold border border-green-200 transition-colors flex items-center gap-1 disabled:opacity-50"
+                title="Criar nova subcategoria"
+              >
+                <Plus size={18} /> <span className="text-xs">Nova Subcat.</span>
+              </button>
+            </div>
+          </div>
+
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1">Nome do Produto</label>
             <input type="text" required value={nome} onChange={(e) => setNome(e.target.value)} className="w-full border p-3 rounded-xl text-gray-800"/>
@@ -326,6 +432,16 @@ export default function NovoProdutoPage() {
             </div>
           </div>
           
+          <div>
+            <label className="block text-sm font-bold text-gray-700">Código de Barras</label>
+            <input 
+              value={codigoBarras} 
+              onChange={(e) => setCodigoBarras(e.target.value)} 
+              className="w-full border p-3 rounded-xl"
+              placeholder="Opcional"
+            />
+          </div>
+
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1">Imagens (Selecione uma ou mais fotos)</label>
             {/* ATRIBUTO MULTIPLE ADICIONADO ABAIXO */}
@@ -375,6 +491,41 @@ export default function NovoProdutoPage() {
               </div>
               <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-xl font-bold text-sm transition-all">
                 Salvar Categoria
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* MODAL FLUTUANTE PARA CADASTRO DE SUBCATEGORIA */}
+      {mostrarModalSubcategoria && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+          <div className="bg-white p-6 rounded-2xl shadow-xl w-full max-w-sm border border-gray-100 relative">
+            <button 
+              onClick={() => setMostrarModalSubcategoria(false)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+            >
+              <X size={20} />
+            </button>
+            
+            <h3 className="text-lg window-title font-bold text-gray-800 mb-2">Criar Nova Subcategoria</h3>
+            <p className="text-xs text-gray-400 mb-4">Ela será vinculada à categoria atual (ex: Vestuário).</p>
+
+            {statusSubcategoria && <div className="mb-3 p-2 bg-yellow-50 text-yellow-700 text-xs rounded font-medium">{statusSubcategoria}</div>}
+
+            <form onSubmit={handleCriarSubcategoria} className="space-y-4">
+              <div>
+                <input 
+                  type="text" 
+                  required 
+                  placeholder="Ex: Blusas, Calças, Shorts..."
+                  value={novaSubcategoriaNome} 
+                  onChange={(e) => setNovaSubcategoriaNome(e.target.value)} 
+                  className="w-full border p-3 rounded-xl text-gray-800 outline-none focus:ring-2 focus:ring-blue-500"
+                  autoFocus
+                />
+              </div>
+              <button type="submit" className="w-full bg-green-600 hover:bg-green-700 text-white p-3 rounded-xl font-bold text-sm transition-all">
+                Salvar Subcategoria
               </button>
             </form>
           </div>

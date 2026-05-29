@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { createBrowserClient } from '@supabase/ssr';
 import { useState } from 'react';
-import { Menu, X, LogOut, TrendingUp, PackagePlus, FileEdit } from 'lucide-react';
+import { Menu, X, LogOut, TrendingUp, PackagePlus, FileEdit, Zap } from 'lucide-react';
+
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -76,6 +77,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           >
             <PackagePlus size={20} />
             <span>Incluir Produto</span>
+          </Link>
+
+          <Link 
+            href="/admin/produtos/edicaoRapida" 
+            onClick={fecharMenu}
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${pathname === '/admin/produtos/ajuste-rapido' ? linkAtivo : linkInativo}`}
+          >
+            <Zap size={20} />
+            <span>Ajuste Rápido</span>
           </Link>
 
           <Link 

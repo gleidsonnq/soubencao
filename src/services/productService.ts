@@ -5,7 +5,7 @@ import { Produto } from '@/types';
 export async function getProdutosPorLoja(slugLoja: string): Promise<Produto[]> {
   const { data, error } = await supabase
     .from('produtos')
-    .select('*, lojas!inner(slug)')
+    .select('*, lojas!inner(slug), categorias(nome), subcategorias(nome)')
     .eq('lojas.slug', slugLoja)
     .eq('ativo', true);
 

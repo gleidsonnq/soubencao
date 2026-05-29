@@ -77,7 +77,8 @@ export default async function ProdutoDetalhesPage({ params }: { params: Promise<
                   id: produto.id,
                   nome: produto.nome,
                   preco: produto.preco,
-                  minio_path: produto.minio_path
+                  minio_path: produto.minio_path,
+                  estoque: produto.estoque
                 }} 
               />
             </div>

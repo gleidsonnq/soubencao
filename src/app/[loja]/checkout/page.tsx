@@ -12,6 +12,10 @@ interface Loja {
   id: number;
   nome: string;
   slug: string;
+  endereco: string;
+  bairro: string;
+  cidade: string;
+  whatsapp?: string;
 }
 
 export default function CheckoutPage({ params }: { params: Promise<{ loja: string }> }) {
@@ -41,7 +45,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ loja: strin
     async function carregarDadosLoja() {
       const { data } = await supabase
         .from('lojas')
-        .select('id, nome, slug')
+        .select('id, nome, slug, endereco, bairro, cidade, whatsapp')
         .eq('slug', lojaSlug)
         .single();
       
@@ -61,32 +65,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ loja: strin
     }
   }, [items, router, lojaSlug]);
 
-  // 1. Busca os dados da loja atual com base na URL para garantir a independência
-  useEffect(() => {
-    async function carregarDadosLoja() {
-      const { data } = await supabase
-        .from('lojas')
-        .select('id, nome, slug')
-        .eq('slug', lojaSlug)
-        .single();
-      
-      if (data) {
-        setLojaAtual(data);
-      } else {
-        router.push('/'); // Se a loja não existir na URL, manda de volta ao portal
-      }
-    }
-    carregarDadosLoja();
-  }, [lojaSlug, supabase, router]);
-
-  // 2. Redireciona se o carrinho estiver vazio
-  useEffect(() => {
-    if (items.length === 0) {
-      router.push(`/${lojaSlug}`);
-    }
-  }, [items, router, lojaSlug]);
-
-  // 3. NOVO: Consulta automática do cliente pelo WhatsApp
+  // 3. Consulta automática do cliente pelo WhatsApp
   useEffect(() => {
     const whatsappLimpo = whatsapp.replace(/\D/g, '');
     
@@ -157,7 +136,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ loja: strin
         .from('pedidos')
         .insert([{
           cliente_whatsapp: whatsappLimpo,
-          loja_id: lojaAtual.id, // <-- Totalmente independente por loja!
+          loja_id: lojaAtual.id,
           total: total,
           status: 'pendente'
         }])
@@ -166,7 +145,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ loja: strin
 
       if (erroPedido || !pedido) throw new Error('Erro ao gerar pedido');
 
-      // 3. Insere os Itens do Pedido (disparando a baixa de estoque automática)
+      // 3. Insere os Itens do Pedido
       const itensParaInserir = items.map(item => ({
         pedido_id: pedido.id,
         produto_id: item.id,
@@ -180,8 +159,17 @@ export default function CheckoutPage({ params }: { params: Promise<{ loja: strin
 
       if (erroItens) throw new Error('Erro ao salvar itens do pedido');
 
-      // 4. Monta o resumo e redireciona ao WhatsApp (carrinho só é limpo após sucesso)
-      const numeroLoja = "5585999999999"; 
+      // 4. >>> NOVO: DEDUZIR O ESTOQUE <<<
+      // Subtrai a quantidade comprada de cada item no banco de dados
+      for (const item of items) {
+        await supabase.rpc('atualizar_estoque', { 
+          p_id: item.id, 
+          quantidade_mudanca: -item.quantidade // Número negativo para diminuir
+        });
+      }
+
+      // 5. Monta o resumo e redireciona ao WhatsApp
+      const numeroLoja = lojaAtual.whatsapp || "5585997492535";
       let textoMsg = `*Novo Pedido [${lojaAtual.nome}]: #${pedido.id.substring(0,6)}*\n\n`;
       textoMsg += `*Cliente:* ${nome}\n`;
       textoMsg += `*Tipo:* ${tipoEntrega === 'retirada' ? '🏪 Retirada na Loja' : '🚚 Entrega'}\n`;
@@ -234,13 +222,13 @@ export default function CheckoutPage({ params }: { params: Promise<{ loja: strin
             <form id="checkout-form" onSubmit={handleFinalizarCompra} className="space-y-5">
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1">Nome Completo</label>
-                  <input type="text" required value={nome} onChange={(e) => setNome(e.target.value)} className="w-full border border-gray-300 p-3 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-gray-800"/>
-                </div>
-                <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-1">WhatsApp (com DDD)</label>
                   <input type="tel" required placeholder="(85) 99999-9999" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} className="w-full border border-gray-300 p-3 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-gray-800"/>
                 </div>
+                <div className="col-span-2">
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Nome Completo</label>
+                  <input type="text" required value={nome} onChange={(e) => setNome(e.target.value)} className="w-full border border-gray-300 p-3 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-gray-800"/>
+                </div>                
               </div>
 
               <div className="pt-6 border-t border-gray-100">
@@ -257,13 +245,39 @@ export default function CheckoutPage({ params }: { params: Promise<{ loja: strin
                 </div>
               </div>
 
+              {tipoEntrega === 'retirada' && lojaAtual && (
+              <div className="bg-green-50 border border-green-200 p-4 rounded-xl text-green-800">
+                <p className="font-bold text-sm mb-1">📍 Endereço de Retirada:</p>
+                <p className="text-sm">
+                  {lojaAtual.endereco}, {lojaAtual.bairro} - {lojaAtual.cidade}
+                </p>
+                
+                <p className="font-bold text-sm mt-3 mb-1">📱 WhatsApp da Loja:</p>
+                <a 
+                  href={`https://wa.me/${lojaAtual.whatsapp?.replace(/\D/g, '')}`} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="text-sm underline font-medium hover:text-green-900"
+                >
+                  {lojaAtual.whatsapp}
+                </a>
+                <a 
+                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lojaAtual.endereco}, ${lojaAtual.bairro}, ${lojaAtual.cidade}`)}`}
+                  target="_blank"
+                  className="text-sm underline text-blue-700 block"
+                >
+                  Ver no mapa 🗺️
+                </a>
+              </div>
+            )}
+
               {tipoEntrega === 'entrega' && (
                 <div className="space-y-4 animate-in fade-in duration-300">
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1">Cidade</label>
                     <input type="text" required value={cidade} onChange={(e) => setCidade(e.target.value)} className="w-full border border-gray-300 p-3 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-gray-800"/>
                     {consultarTaxa && (
-                      <p className="text-xs text-amber-600 mt-1 font-semibold">⚠️ Taxa de entrega para fora de Maracanaú será combinada no atendimento.</p>
+                      <p className="text-xs text-amber-600 mt-1 font-semibold">⚠️ Taxa de entrega para fora será combinada no atendimento.</p>
                     )}
                   </div>
                   <div>
@@ -343,6 +357,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ loja: strin
                   <span>{consultarTaxa ? 'A combinar' : `R$ ${taxaEntrega.toFixed(2).replace('.', ',')}`}</span>
                 </div>
               )}
+              
               <div className="flex justify-between text-xl font-extrabold text-blue-600 pt-4 border-t border-gray-100">
                 <span>Total</span>
                 <span>R$ {total.toFixed(2).replace('.', ',')}</span>
@@ -358,6 +373,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ loja: strin
               {carregando ? 'Finalizando Pedido...' : (
                 <>Confirmar Pedido <MessageCircle size={20} /></>
               )}
+              
             </button>
           </div>
         </div>
